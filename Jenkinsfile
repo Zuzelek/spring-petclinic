@@ -1,38 +1,67 @@
 pipeline {
     agent any
-    environment {
-        SONAR_TOKEN = credentials('ff7215b135f436c686d8006d74bc630c0c53c238')
+
+    tools {
+        maven 'Maven'
+        jdk 'JDK 11'
     }
+
     stages {
-        stage('Checkout Code') {
+        stage('Checkout') {
             steps {
-                git 'https://github.com/Zuzelek/spring-petclinic.git'
+                checkout scm
             }
         }
-        stage('Build & Test') {
+
+        stage('Build') {
             steps {
-                sh 'mvn clean test'
+                bat 'mvn clean package -DskipTests'
             }
         }
-        stage('SonarCloud Analysis') {
+
+        stage('Unit Tests') {
             steps {
-                sh '''
-                    mvn sonar:sonar \
-                    -Dsonar.projectKey=your_project_key \
-                    -Dsonar.organization=your_organization_name \
-                    -Dsonar.login=${SONAR_TOKEN}
-                '''
+                bat 'mvn test'
+            }
+            post {
+                always {
+                    junit '**/target/surefire-reports/*.xml'
+                }
             }
         }
-        stage('Package Application') {
+
+        stage('SonarQube Analysis') {
             steps {
-                sh 'mvn package'
+                echo 'Skipping SonarQube for now'
+                // If you have SonarQube configured, uncomment:
+                // withSonarQubeEnv('SonarCloud') {
+                //     bat 'mvn sonar:sonar'
+                // }
             }
         }
-        stage('Archive Artifact') {
+
+        stage('Build Docker Image') {
             steps {
-                archiveArtifacts artifacts: '**/target/*.jar', fingerprint: true
+                bat 'docker build -t spring-petclinic:%BUILD_NUMBER% .'
+                bat 'docker tag spring-petclinic:%BUILD_NUMBER% spring-petclinic:latest'
             }
+        }
+
+        stage('Run Docker Container') {
+            steps {
+                bat 'docker stop petclinic-test || exit 0'
+                bat 'docker rm petclinic-test || exit 0'
+                bat 'docker run -d -p 8081:8080 --name petclinic-test spring-petclinic:latest'
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Pipeline completed successfully!'
+        }
+        failure {
+            echo 'Pipeline failed!'
         }
     }
 }
