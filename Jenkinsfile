@@ -40,18 +40,24 @@ pipeline {
 
         stage('Deploy to AWS') {
             steps {
-                // Create deployment script
-                bat '''
-                    echo #!/bin/bash > deploy.sh
-                    echo docker load -i ~/spring-petclinic.tar >> deploy.sh
-                    echo docker stop petclinic 2^>/dev/null ^|^| true >> deploy.sh
-                    echo docker rm petclinic 2^>/dev/null ^|^| true >> deploy.sh
-                    echo docker run -d -p 80:8080 --name petclinic --restart always spring-petclinic:latest >> deploy.sh
-                    echo docker ps >> deploy.sh
-                    echo chmod +x deploy.sh
-                '''
+                script {
+                    // Create deploy.sh with LF endings
+                    def deployScript = '''#!/bin/bash
+docker load -i ~/spring-petclinic.tar
+docker stop petclinic 2>/dev/null || true
+docker rm petclinic 2>/dev/null || true
+docker run -d -p 80:8080 --name petclinic --restart always spring-petclinic:latest
+docker ps
+'''
 
-                // Use Publish Over SSH plugin
+                    // Write deploy.sh to workspace with LF endings
+                    writeFile file: 'deploy.sh', text: deployScript.replaceAll('\\r\\n?', '\n')
+
+                    // Convert line endings explicitly (just in case)
+                    bat 'powershell -Command "(Get-Content deploy.sh) | Set-Content -NoNewline -Encoding Ascii deploy.sh"'
+                }
+
+                // Use Publish Over SSH plugin to deploy
                 sshPublisher(
                     publishers: [
                         sshPublisherDesc(
@@ -76,7 +82,7 @@ pipeline {
             echo 'Application deployed to http://13.58.97.148'
         }
         failure {
-            echo 'Pipeline failed. Check the logs for details.'
+            echo ' Pipeline failed. Check the logs for details.'
         }
     }
 }
