@@ -40,22 +40,32 @@ pipeline {
 
         stage('Deploy to AWS') {
             steps {
-                sshagent(['aws-ec2-key']) {
-                    // Create deployment script with Unix line endings
-                    bat '''
-                        echo #!/bin/bash > deploy.sh
-                        echo docker load -i ~/spring-petclinic.tar >> deploy.sh
-                        echo docker stop petclinic 2^>/dev/null ^|^| true >> deploy.sh
-                        echo docker rm petclinic 2^>/dev/null ^|^| true >> deploy.sh
-                        echo docker run -d -p 80:8080 --name petclinic --restart always spring-petclinic:latest >> deploy.sh
-                        echo docker ps >> deploy.sh
-                    '''
+                // Create deployment script
+                bat '''
+                    echo #!/bin/bash > deploy.sh
+                    echo docker load -i ~/spring-petclinic.tar >> deploy.sh
+                    echo docker stop petclinic 2^>/dev/null ^|^| true >> deploy.sh
+                    echo docker rm petclinic 2^>/dev/null ^|^| true >> deploy.sh
+                    echo docker run -d -p 80:8080 --name petclinic --restart always spring-petclinic:latest >> deploy.sh
+                    echo docker ps >> deploy.sh
+                    echo chmod +x deploy.sh
+                '''
 
-                    // Copy files and execute on EC2
-                    bat 'scp -o StrictHostKeyChecking=no spring-petclinic.tar ec2-user@13.58.97.148:~'
-                    bat 'scp -o StrictHostKeyChecking=no deploy.sh ec2-user@13.58.97.148:~'
-                    bat 'ssh -o StrictHostKeyChecking=no ec2-user@13.58.97.148 "chmod +x ~/deploy.sh && ~/deploy.sh"'
-                }
+                // Use Publish Over SSH plugin
+                sshPublisher(
+                    publishers: [
+                        sshPublisherDesc(
+                            configName: 'AWS-EC2',
+                            transfers: [
+                                sshTransfer(
+                                    sourceFiles: 'spring-petclinic.tar,deploy.sh',
+                                    execCommand: 'chmod +x ~/deploy.sh && ~/deploy.sh'
+                                )
+                            ],
+                            verbose: true
+                        )
+                    ]
+                )
             }
         }
     }
@@ -67,9 +77,6 @@ pipeline {
         }
         failure {
             echo 'Pipeline failed. Check the logs for details.'
-        }
-        always {
-            bat 'del deploy.sh spring-petclinic.tar /F /Q 2>nul || exit /b 0'
         }
     }
 }
